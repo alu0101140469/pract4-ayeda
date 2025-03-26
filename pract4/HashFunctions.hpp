@@ -4,133 +4,148 @@
 #include <iostream>
 #include <cstdlib>
 #include <ctime>
+#include <string>
 
-// Daniel Palenzuela Álvarez alu0101140469
-
-// Clase nif, Representa la parte numérica del NIF
-// Encapsula un número entero de 8 dígitos y sobrecarga operadores necesarios.
-class nif {
+// ----------------------------
+// Clase persona
+// ----------------------------
+// Representa a una persona con un ID, nombre y dos apellidos.
+// El ID tiene el formato: <tipo><7 dígitos>, donde <tipo> es "alu", "prof" o "pas".
+// La conversión a long se realiza extrayendo la parte numérica y sumando un offset
+// según el tipo, de modo que "prof" y "pas" se diferencian de "alu".
+class persona {
 private:
-    long number; // Almacena el número de 8 dígitos
+    std::string id;       // Ejemplos: "alu0001345", "prof0001234", "pas0001234"
+    std::string nombre;
+    std::string apellido1;
+    std::string apellido2;
 public:
-    // Constructor por defecto
-    nif() {
-        // Genera un número aleatorio entre 10000000 y 99999999 (8 dig).
-        number = 10000000 + rand() % 90000000;
+    // Constructor que recibe todos los datos
+    persona(const std::string &id, const std::string &nombre,
+            const std::string &apellido1, const std::string &apellido2)
+      : id(id), nombre(nombre), apellido1(apellido1), apellido2(apellido2) {}
+
+    // Constructor por defecto (vacío, aunque podría generar datos aleatorios)
+    persona() : id("alu0000000"), nombre(""), apellido1(""), apellido2("") {}
+
+    // Operador de conversión a long:
+    // Extrae la parte numérica (7 dígitos) y le suma un offset según el prefijo.
+    // Offset: "alu" -> 0, "prof" -> 10000000, "pas" -> 20000000.
+    operator long() const {
+        long offset = 0;
+        std::string numPart;
+        if(id.substr(0,4) == "prof") {
+            offset = 10000000;
+            numPart = id.substr(4); // Desde el 5º carácter
+        } else if(id.substr(0,3) == "pas") {
+            offset = 20000000;
+            numPart = id.substr(3);
+        } else if(id.substr(0,3) == "alu") {
+            offset = 0;
+            numPart = id.substr(3);
+        } else {
+            // Si el formato es desconocido, se usa 0
+            numPart = "0";
+        }
+        return offset + std::stol(numPart);
     }
-    // Constructor que recibe un valor long para inicializar el nif.
-    nif(long n) : number(n) {}
 
-    // Operador de conversión a long, para poder realizar operaciones numéricas.
-    operator long() const { return number; }
+    // Operadores de comparación: se comparan los ID (se asume que son únicos).
+    bool operator==(const persona &other) const { return id == other.id; }
+    bool operator!=(const persona &other) const { return id != other.id; }
+    bool operator<(const persona &other) const { return id < other.id; }
+    bool operator>(const persona &other) const { return id > other.id; }
 
-    // Sobrecarga del operador de igualdad.
-    bool operator==(const nif &other) const { return number == other.number; }
-    // Sobrecarga del operador de desigualdad.
-    bool operator!=(const nif &other) const { return number != other.number; }
-    // Sobrecarga del operador menor que.
-    bool operator<(const nif &other) const { return number < other.number; }
-    // Sobrecarga del operador mayor que.
-    bool operator>(const nif &other) const { return number > other.number; }
+    // Métodos para obtener los datos (opcional para mostrar)
+    std::string getId() const { return id; }
+    std::string getNombre() const { return nombre; }
+    std::string getApellido1() const { return apellido1; }
+    std::string getApellido2() const { return apellido2; }
 };
 
+// ----------------------------
 // Funciones de Dispersión
+// ----------------------------
+
 // Clase base abstracta para las funciones de dispersión.
-// Define el operador función que con una clave devuelve una posición en la tabla.
+// Dado un objeto de tipo Key (ahora persona), retorna una posición en la tabla.
 template<class Key>
 class DispersionFunction {
 public:
-    // Método virtual puro, cada función de dispersión debe implementarlo.
     virtual unsigned operator()(const Key &key) const = 0;
     virtual ~DispersionFunction() {}
 };
 
-// Función de dispersión con el método módulo.
-// Calcular h(k) = k % tableSize
+// Función de dispersión usando el método módulo.
+// Calcula: h(k) = (valor numérico de key) % tableSize.
 template<class Key>
 class ModuleHashFunction : public DispersionFunction<Key> {
 private:
-    unsigned tableSize; // Tamaño de la tabla, para limitar la posición.
+    unsigned tableSize;
 public:
-    // Constructor que inicializa el tamaño de la tabla.
     ModuleHashFunction(unsigned ts) : tableSize(ts) {}
-    
-    // Implementación del operador función.
     unsigned operator()(const Key &key) const {
-        // Se convierte la clave a long y se calcula el módulo.
         return static_cast<unsigned>(static_cast<long>(key)) % tableSize;
     }
 };
 
-// Función de dispersión con la suma de dígitos de la clave.
-// Calcular h(k) = sum(ki) % tableSize
+// Función de dispersión basada en la suma de dígitos de la parte numérica de key.
+// Calcula: h(k) = (suma de dígitos del valor numérico) % tableSize.
 template<class Key>
 class SumHashFunction : public DispersionFunction<Key> {
 private:
-    unsigned tableSize; // Tamaño de la tabla.
+    unsigned tableSize;
 public:
-    // Constructor que recibe el tamaño de la tabla.
     SumHashFunction(unsigned ts) : tableSize(ts) {}
-    
-    // Implementación del operador función.
     unsigned operator()(const Key &key) const {
-        // Se convierte la clave a long.
         long n = static_cast<long>(key);
         unsigned sum = 0;
-        // Se suman los dígitos del número.
         while(n > 0) {
-            sum += n % 10; // Suma el último dígito.
-            n /= 10;       // Elimina el último dígito.
+            sum += n % 10;
+            n /= 10;
         }
-        return sum % tableSize; // Se aplica módulo para obtener la posición.
+        return sum % tableSize;
     }
 };
 
 // Función de dispersión pseudoaleatoria.
-// Calcular h(k) = {srand(k); rand() % tableSize}
-// La semilla se inicializa con el valor de la clave para obtener resultados pseudoaleatorios.
+// Inicializa la semilla con el valor numérico de key y retorna un número aleatorio en [0, tableSize-1].
 template<class Key>
 class PseudoRandomHashFunction : public DispersionFunction<Key> {
 private:
-    unsigned tableSize; // Tamaño de la tabla.
+    unsigned tableSize;
 public:
-    // Constructor que recibe el tamaño de la tabla.
     PseudoRandomHashFunction(unsigned ts) : tableSize(ts) {}
-    
-    // Implementación del operador función.
     unsigned operator()(const Key &key) const {
-        // Inicializa el generador de números aleatorios con la clave.
         srand(static_cast<unsigned>(static_cast<long>(key)));
-        // Devuelve un número aleatorio en el rango [0, tableSize-1].
         return rand() % tableSize;
     }
 };
 
-
+// ----------------------------
 // Funciones de Exploración
+// ----------------------------
+
 // Clase base abstracta para las estrategias de exploración.
-// Define un operador función que recibe la clave y el número de intento, devolviendo un desplazamiento.
+// Recibe la clave y el número de intento, y retorna un desplazamiento.
 template<class Key>
 class ExplorationFunction {
 public:
-    // Método virtual puro.
     virtual unsigned operator()(const Key &key, unsigned i) const = 0;
     virtual ~ExplorationFunction() {}
 };
 
-// Exploración lineal: g(k, i) = i
-// Devuelve el número de intento.
+// Exploración lineal: g(k, i) = i.
 template<class Key>
 class LinearExploration : public ExplorationFunction<Key> {
 public:
     unsigned operator()(const Key &key, unsigned i) const {
-        (void) key;
+        (void) key; // No se usa la clave
         return i;
     }
 };
 
-// Exploración cuadrática: g(k, i) = i^2
-// Devuelve el cuadrado del número de intento.
+// Exploración cuadrática: g(k, i) = i^2.
 template<class Key>
 class QuadraticExploration : public ExplorationFunction<Key> {
 public:
@@ -140,32 +155,27 @@ public:
     }
 };
 
-// Exploración por doble dispersión: g(k, i) = f(k) * i
-// Recibe una función de dispersión auxiliar (f(k)) a través del constructor.
+// Exploración por doble dispersión: g(k, i) = f(k) * i,
+// donde f(k) es una función de dispersión auxiliar.
 template<class Key>
 class DoubleHashExploration : public ExplorationFunction<Key> {
 private:
-    DispersionFunction<Key>& secondary; // Función auxiliar para calcular f(k)
+    DispersionFunction<Key>& secondary;
 public:
-    // Constructor que recibe la función auxiliar.
     DoubleHashExploration(DispersionFunction<Key>& sec) : secondary(sec) {}
-    
-    // Devuelve el desplazamiento multiplicando el resultado de f(k) por el intento.
     unsigned operator()(const Key &key, unsigned i) const {
         return secondary(key) * i;
     }
 };
 
-// Exploración por redispersión: g(k, i) = f^(i)(k)
-// Utiliza el generador pseudoaleatorio: inicializa la semilla con la clave y devuelve el i-ésimo número aleatorio.
+// Exploración por redispersión: g(k, i) = f(i)(k),
+// se utiliza el generador pseudoaleatorio inicializado con key.
 template<class Key>
 class RedispersionExploration : public ExplorationFunction<Key> {
 public:
     unsigned operator()(const Key &key, unsigned i) const {
-        // Inicializa la semilla con el valor de la clave.
         srand(static_cast<unsigned>(static_cast<long>(key)));
         unsigned offset = 0;
-        // Llama a rand() i+1 veces, devolviendo el último valor.
         for(unsigned j = 0; j <= i; j++){
             offset = rand();
         }
@@ -173,4 +183,4 @@ public:
     }
 };
 
-#endif
+#endif // HASHFUNCTIONS_HPP
